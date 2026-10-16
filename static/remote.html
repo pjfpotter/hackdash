@@ -1,0 +1,96 @@
+<title>Hackdash Remote</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
+<style>
+/* Phone remote: one column, dictation box on top, tap-to-tick lists below. */
+@font-face { font-family: 'VT323Local'; src: url(fonts/VT323.woff2) format('woff2'); }
+:root { color-scheme: dark; --bg: #04080c; --panel: #07111a; --fg: #8ccfff; --hi: #dff3ff; --dim: #4f7b9b; --line: #2b5b80; --ok: #58ff8c; --warn: #ffd23d; --bad: #ff4d6d;
+  --font: 'VT323Local', 'VT323', 'Courier New', monospace; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 21px/1.15 var(--font); }
+main { max-width: 640px; margin: 0 auto; padding-block: 14px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 14px; }
+h1 { margin: 0; font-size: 30px; font-weight: normal; color: var(--hi); letter-spacing: .05em; }
+h1 span { color: var(--dim); }
+h2 { margin: 0 0 6px; font-size: 19px; font-weight: normal; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+textarea { width: 100%; min-height: 110px; resize: vertical; background: var(--panel); color: var(--hi); border: 2px solid var(--line); font: 22px/1.2 var(--font); padding: 10px; }
+textarea:focus, button:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+button { font: 21px var(--font); background: var(--panel); color: var(--fg); border: 2px solid var(--line); padding: 8px 14px; cursor: pointer; }
+button.go { background: var(--fg); color: var(--bg); border-color: var(--fg); flex: 1; }
+button:active { transform: translateY(1px); }
+#out { white-space: pre-wrap; background: var(--panel); border-left: 3px solid var(--line); padding: 8px 10px; min-height: 2.4em; font-size: 19px; }
+.list { display: flex; flex-direction: column; gap: 6px; }
+.item { text-align: left; display: flex; gap: 10px; align-items: baseline; }
+.item .c { color: var(--hi); }
+.item.boring { border-color: var(--warn); }
+.empty { color: var(--dim); }
+#help { white-space: pre; font-size: 16px; color: var(--dim); overflow-x: auto; margin: 0; }
+.err { color: var(--bad); }
+</style>
+
+<main>
+  <h1>HACKDASH <span>// remote</span></h1>
+  <div id="keyWarn" class="err" hidden>No key yet. Open this page once using the link the Pi prints at startup (it ends in ?key=...).</div>
+  <h2><label for="cmd">Say or type (one command per line)</label></h2>
+  <textarea id="cmd" placeholder="tada emptied the dishwasher&#10;todo call the dentist, buy milk&#10;done milk"></textarea>
+  <div class="btns">
+    <button class="go" id="send">SEND &gt;&gt;</button>
+    <button data-prefix="tada ">TA-DA</button>
+    <button data-prefix="todo ">TODO</button>
+    <button data-prefix="boring ">BORING</button>
+  </div>
+  <div id="out" aria-live="polite">ready.</div>
+  <section><h2>Today: tap to tick off</h2><div class="list" id="todos"></div></section>
+  <section><h2>Next milestones</h2><div class="list" id="ms"></div></section>
+  <section><h2>Commands</h2><pre id="help">loading...</pre></section>
+</main>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const qs = new URLSearchParams(location.search);
+let KEY = qs.get('key') || '';
+try { if (KEY) localStorage.setItem('hd_key', KEY); else KEY = localStorage.getItem('hd_key') || ''; } catch (e) {}
+if (qs.get('key')) history.replaceState(null, '', location.pathname);
+$('#keyWarn').hidden = !!KEY;
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function send(text) {
+  if (!text.trim()) return;
+  $('#out').textContent = '> transmitting...';
+  try {
+    const r = await fetch('api/cmd', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Dash-Key': KEY }, body: JSON.stringify({ text }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    $('#out').textContent = j.replies.join('\n');
+    if (/^\s*help\s*$/i.test(text)) return;
+    $('#cmd').value = '';
+    refresh();
+  } catch (e) {
+    $('#out').innerHTML = `<span class="err">Couldn't reach the dash (${esc(e.message)}). Check the Pi is on and the key is right.</span>`;
+  }
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('api/state', { headers: { 'X-Dash-Key': KEY }, cache: 'no-store' });
+    if (!r.ok) return;
+    const S = await r.json();
+    const open = S.todos.filter(t => !t.done);
+    $('#todos').innerHTML = open.length ? open.map(t => `<button class="item${t.boring ? ' boring' : ''}" data-done="${t.id}"><span class="c">[ ]</span><span>${esc(t.text)}</span></button>`).join('') : '<div class="empty">Nothing open. Nice.</div>';
+    const ms = S.projects.filter(p => p.status === 'active').flatMap(p => (p.milestones || []).filter(m => !m.done).slice(0, 1).map(m => ({ p, m })));
+    $('#ms').innerHTML = ms.length ? ms.map(({ p, m }) => `<button class="item" data-done="${m.id}"><span class="c">[ ]</span><span>${esc(p.name)}: ${esc(m.title)}</span></button>`).join('') : '<div class="empty">No open milestones.</div>';
+  } catch (e) { /* offline; keep what's shown */ }
+}
+
+$('#send').onclick = () => send($('#cmd').value);
+$('#cmd').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send($('#cmd').value); });
+document.querySelectorAll('[data-prefix]').forEach(b => b.onclick = () => { const c = $('#cmd'); c.value = b.dataset.prefix + c.value.replace(/^(tada|todo|boring)\s+/i, ''); c.focus(); });
+document.addEventListener('click', e => { const b = e.target.closest('[data-done]'); if (b) send('done ' + b.dataset.done); });
+fetch('api/cmd', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Dash-Key': KEY }, body: '{"text":"help"}' })
+  .then(r => r.json()).then(j => { $('#help').textContent = j.replies.join('\n'); }).catch(() => { $('#help').textContent = 'Connect to see commands.'; });
+refresh();
+setInterval(refresh, 30000);
+})();
+</script>

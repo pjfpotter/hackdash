@@ -1,0 +1,577 @@
+<title>Hackdash</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
+<style>
+/* Layout: fixed 1280x720 "monitor" scaled to fit the TV; 3 columns (today | projects | money+tokens),
+   TA-DA band and syslog along the bottom. Below 760px wide it unscales into one stacked column. */
+@font-face { font-family: 'VT323Local'; src: url(fonts/VT323.woff2) format('woff2'); font-display: block; }
+:root {
+  color-scheme: dark;
+  --bg: #04080c; --panel: #07111a; --fg: #8ccfff; --hi: #dff3ff; --dim: #3d6a8a; --line: #2b5b80;
+  --ok: #58ff8c; --warn: #ffd23d; --bad: #ff4d6d; --mag: #ff4df0;
+  --glow: 0 0 5px rgba(140, 207, 255, .55);
+  --font: 'VT323Local', 'VT323', 'Courier New', monospace;
+}
+:root[data-hd="green"] { --bg: #020803; --panel: #041007; --fg: #74ff8e; --hi: #d9ffe0; --dim: #2f7a3f; --line: #2a6b38; --glow: 0 0 5px rgba(116, 255, 142, .5); }
+:root[data-hd="amber"] { --bg: #0a0602; --panel: #130c03; --fg: #ffb339; --hi: #ffe6b8; --dim: #8a5c1c; --line: #7a5016; --glow: 0 0 5px rgba(255, 179, 57, .5); }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--bg); color: var(--fg); font: 20px/1.05 var(--font); text-shadow: var(--glow); }
+.lowfx body, .lowfx * { text-shadow: none !important; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+#stage { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; padding: 12px;
+  display: grid; gap: 10px; grid-template-columns: 330px 1fr 330px; grid-template-rows: 100px 1fr 162px 22px; }
+.col { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
+
+/* panels: thin frame with a tab label sitting on the top edge, like the reference */
+.panel { position: relative; border: 2px solid var(--line); background: var(--panel); padding: 16px 10px 8px; min-height: 0; min-width: 0; overflow: hidden; }
+.tab { position: absolute; top: -2px; left: 10px; margin: 0; padding: 0 16px 1px 8px; font-size: 18px; font-weight: normal;
+  color: var(--bg); background: var(--line); text-shadow: none; letter-spacing: .04em; clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
+.tab b { color: var(--hi); font-weight: normal; }
+.meta { position: absolute; top: 0; right: 10px; font-size: 18px; color: var(--dim); }
+.dim { color: var(--dim); } .hi { color: var(--hi); } .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); } .mag { color: var(--mag); }
+.row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.empty { color: var(--dim); padding-top: 6px; }
+
+/* header */
+header { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 330px; gap: 10px; min-height: 0; }
+#bannerWrap { position: relative; overflow: hidden; }
+#banner { margin: 0; font: 20px/14px var(--font); letter-spacing: -.02em; color: var(--fg); transform: skewX(-14deg); transform-origin: 0 100%; padding-left: 14px; white-space: pre; }
+#prompt { position: absolute; left: 0; bottom: 0; right: 0; font-size: 21px; }
+#prompt .p { color: var(--dim); }
+.glitch { position: absolute; width: 9px; height: 11px; }
+#clockBox { border: 2px solid var(--line); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; }
+#clock { font-size: 52px; line-height: .9; color: var(--hi); font-variant-numeric: tabular-nums; letter-spacing: .03em; }
+#date { font-size: 19px; color: var(--fg); letter-spacing: .06em; }
+
+/* bars: segmented like an old VU meter */
+.bar { display: inline-block; position: relative; height: 12px; width: 100%; background: repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 8px, transparent 8px 10px); vertical-align: middle; }
+.bar i { position: absolute; inset: 0 auto 0 0; background: repeating-linear-gradient(90deg, currentColor 0 8px, transparent 8px 10px); }
+.barline { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+
+/* today */
+#p-todo { flex: 1 1 auto; }
+.todo { display: grid; grid-template-columns: 34px 1fr; }
+.todo.done { color: var(--dim); }
+.todo.done .t { text-decoration: line-through; }
+.todo .chk { color: var(--dim); }
+.todo:not(.done) .chk { color: var(--hi); }
+.tag { color: var(--warn); font-size: 17px; }
+#p-goals { flex: 0 0 152px; }
+.goal { margin-bottom: 3px; }
+.goal .barline { grid-template-columns: 1fr 44px; }
+
+/* projects */
+#p-proj { display: flex; flex-direction: column; }
+#projList { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; padding-top: 4px; }
+.proj { border-left: 3px solid var(--line); padding-left: 10px; }
+.proj.lead { border-left-color: var(--hi); }
+.proj .name { font-size: 26px; color: var(--hi); display: flex; justify-content: space-between; gap: 8px; }
+.proj .name small { font-size: 18px; color: var(--ok); white-space: nowrap; }
+.proj .barline { grid-template-columns: 1fr 48px; color: var(--fg); }
+.proj .next { color: var(--fg); }
+.ms { display: flex; flex-wrap: wrap; gap: 0 14px; max-height: 42px; overflow: hidden; font-size: 18px; }
+.ms .d { color: var(--dim); }
+#projFoot { border-top: 1px dashed var(--line); padding-top: 4px; display: flex; flex-wrap: wrap; gap: 0 16px; justify-content: space-between; font-size: 19px; }
+#wip { display: none; color: var(--bad); }
+#wip.on { display: block; animation: blink 1.1s steps(2) infinite; }
+
+/* money + tokens */
+#p-bank { flex: 1 1 auto; }
+#bal { font-size: 46px; color: var(--hi); line-height: 1; font-variant-numeric: tabular-nums; margin: 4px 0 2px; }
+#spark { display: block; width: 100%; height: 46px; margin: 4px 0; }
+#p-tok { flex: 0 0 150px; }
+.tok { display: grid; grid-template-columns: 74px 1fr 46px; gap: 6px; align-items: center; }
+.tokreset { color: var(--dim); font-size: 18px; padding-left: 80px; margin-bottom: 3px; }
+
+/* ta-da band */
+#p-tada { grid-column: 1 / 3; display: grid; grid-template-columns: 330px 1fr; gap: 16px; }
+#rank { font-size: 30px; color: var(--hi); line-height: 1; }
+#lvl { font-size: 19px; }
+#tadaList { columns: 2; column-gap: 20px; font-size: 19px; }
+#tadaList .row { break-inside: avoid; }
+#tadaList .pts { color: var(--ok); display: inline-block; width: 44px; }
+#tadaMini { font: 12px/9px var(--font); color: var(--mag); margin: 2px 0 0; white-space: pre; opacity: .9; }
+
+/* syslog */
+#p-log { font-size: 18px; }
+#p-log .ts { color: var(--ok); }
+
+#status { grid-column: 1 / -1; display: flex; justify-content: space-between; font-size: 19px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 1px; }
+#status .k { color: var(--fg); }
+.cursor { display: inline-block; width: 10px; height: 16px; background: var(--fg); vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* broadcast message */
+#bcast { color: var(--warn); }
+
+/* CRT overlays */
+#crt { position: fixed; inset: 0; pointer-events: none; z-index: 50;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px), radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.55) 100%); }
+#night { position: fixed; inset: 0; pointer-events: none; z-index: 49; background: #000; opacity: 0; transition: opacity 4s; }
+
+/* reward overlay */
+#reward { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; }
+#rain { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .55; }
+.rbox { position: relative; text-align: center; max-width: 1100px; }
+#rBig { margin: 0 auto; font: 26px/22px var(--font); color: var(--hi); white-space: pre; display: inline-block; text-align: left;
+  text-shadow: 0 0 12px var(--fg), 0 0 2px var(--hi); animation: rgb .7s steps(6) 1; }
+#rText { font-size: 40px; color: var(--hi); margin: 18px 0 14px; }
+#rLines { margin: 0 auto; font: 24px/1.15 var(--font); color: var(--fg); white-space: pre; text-align: left; display: inline-block; min-height: 120px; }
+#rFoot { font-size: 26px; color: var(--mag); margin-top: 10px; letter-spacing: .2em; }
+@keyframes rgb { 0% { transform: translateX(-6px); text-shadow: 6px 0 var(--bad), -6px 0 var(--fg); } 50% { transform: translateX(4px); text-shadow: -4px 0 var(--mag), 4px 0 var(--ok); } 100% { transform: none; } }
+.ship #rBig { color: var(--ok); }
+
+/* phone / narrow preview: unscale and stack */
+.stack, .stack body { overflow: auto; height: auto; }
+.stack #stage { position: static; transform: none !important; width: auto; height: auto; display: flex; flex-direction: column;
+  padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.stack header { grid-template-columns: 1fr; }
+.stack #bannerWrap { height: 90px; }
+.stack #banner { font-size: 11px; line-height: 9px; }
+.stack #p-todo, .stack #p-goals, .stack #p-bank, .stack #p-tok { flex: none; }
+.stack #p-tada { grid-template-columns: 1fr; }
+.stack #tadaList { columns: 1; }
+.stack #status { flex-wrap: wrap; }
+.stack #reward { position: fixed; }
+.stack #rBig { font-size: 12px; line-height: 11px; }
+.stack #rText { font-size: 26px; }
+.stack #rLines { font-size: 17px; }
+@media (prefers-reduced-motion: reduce) { .cursor, #wip.on, #rBig { animation: none; } }
+</style>
+
+<div id="stage">
+  <header>
+    <div id="bannerWrap"><pre id="banner"></pre><div id="prompt" class="row"><span class="p">&gt;&gt;</span><span id="promptTxt"></span> <span id="bcast"></span></div></div>
+    <div id="clockBox"><div id="clock">--:--:--</div><div id="date">----</div></div>
+  </header>
+
+  <div class="col">
+    <section class="panel" id="p-todo"><h2 class="tab">today<b>.todo</b></h2><span class="meta" id="todoMeta"></span><div id="todoList"></div></section>
+    <section class="panel" id="p-goals"><h2 class="tab" id="goalTab">week<b>.goals</b></h2><span class="meta" id="goalMeta"></span><div id="goalList"></div></section>
+  </div>
+
+  <section class="panel" id="p-proj"><h2 class="tab">live<b>.projects</b></h2><span class="meta" id="projMeta"></span>
+    <div id="wip"></div>
+    <div id="projList"></div>
+    <div id="projFoot"><span id="parked"></span><span id="shipped"></span></div>
+  </section>
+
+  <div class="col">
+    <section class="panel" id="p-bank"><h2 class="tab">bank<b>.balance</b></h2><span class="meta" id="bankMeta"></span>
+      <div id="bal">----</div><div id="delta" class="row"></div><svg id="spark" viewBox="0 0 300 46" preserveAspectRatio="none"></svg><div id="budget"></div><div id="accts"></div>
+    </section>
+    <section class="panel" id="p-tok"><h2 class="tab">claude<b>.tokens</b></h2><span class="meta" id="tokMeta"></span><div id="tokList"></div></section>
+  </div>
+
+  <section class="panel" id="p-tada"><h2 class="tab">ta-da<b>.list</b></h2>
+    <div><div id="rank">--</div><div id="lvl"></div><div class="barline" id="xpline"></div><div id="streak"></div><pre id="tadaMini"></pre></div>
+    <div id="tadaList"></div>
+  </section>
+  <section class="panel" id="p-log"><h2 class="tab">sys<b>.log</b></h2><div id="logList"></div></section>
+
+  <div id="status"><span><span class="k">&gt;&gt;</span><span id="statusL"></span> <span class="cursor"></span></span><span id="statusR"></span></div>
+
+  <div id="reward" hidden><canvas id="rain"></canvas><div class="rbox"><pre id="rBig"></pre><div id="rText"></div><pre id="rLines"></pre><div id="rFoot"></div></div></div>
+</div>
+<div id="night"></div>
+<div id="crt"></div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const qs = new URLSearchParams(location.search);
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+let KEY = qs.get('key') || store.get('hd_key') || '';
+if (qs.get('key')) store.set('hd_key', KEY);
+const LOWFX = qs.has('lowfx');
+const SOUND = qs.get('sound') !== '0';
+if (LOWFX) document.documentElement.classList.add('lowfx');
+
+let S = null, DEMO = false, authFail = false, linkOk = false, lastHandle = null, bootAt = Date.now();
+
+// ---------- tiny 5-row block font for banners ----------
+const F = {
+  A:' ### |#   #|#####|#   #|#   #', B:'#### |#   #|#### |#   #|#### ', C:' ####|#    |#    |#    | ####', D:'#### |#   #|#   #|#   #|#### ',
+  E:'#####|#    |#### |#    |#####', F:'#####|#    |#### |#    |#    ', G:' ####|#    |#  ##|#   #| ####', H:'#   #|#   #|#####|#   #|#   #',
+  I:'###| # | # | # |###', J:'  ###|   # |   # |#  # | ##  ', K:'#   #|#  # |###  |#  # |#   #', L:'#    |#    |#    |#    |#####',
+  M:'#   #|## ##|# # #|#   #|#   #', N:'#   #|##  #|# # #|#  ##|#   #', O:' ### |#   #|#   #|#   #| ### ', P:'#### |#   #|#### |#    |#    ',
+  Q:' ### |#   #|# # #|#  # | ## #', R:'#### |#   #|#### |#  # |#   #', S:' ####|#    | ### |    #|#### ', T:'#####|  #  |  #  |  #  |  #  ',
+  U:'#   #|#   #|#   #|#   #| ### ', V:'#   #|#   #| # # | # # |  #  ', W:'#   #|#   #|# # #|## ##|#   #', X:'#   #| # # |  #  | # # |#   #',
+  Y:'#   #| # # |  #  |  #  |  #  ', Z:'#####|   # |  #  | #   |#####', 0:' ### |#  ##|# # #|##  #| ### ', 1:' # |## | # | # |###',
+  2:'#### |    #| ### |#    |#####', 3:'#### |    #| ### |    #|#### ', 4:'#   #|#   #|#####|    #|    #', 5:'#####|#    |#### |    #|#### ',
+  6:' ### |#    |#### |#   #| ### ', 7:'#####|    #|   # |  #  |  #  ', 8:' ### |#   #| ### |#   #| ### ', 9:' ### |#   #| ####|    #| ### ',
+  '.':' | | | |#', '!':'#|#|#| |#', '-':'    |    |####|    |    ', '_':'    |    |    |    |####', ' ':'  |  |  |  |  ', ':':' |#| |#| '
+};
+function big(str) {
+  const rows = ['', '', '', '', ''];
+  for (const ch of String(str).toUpperCase()) {
+    const g = (F[ch] || F[' ']).split('|');
+    for (let i = 0; i < 5; i++) rows[i] += g[i] + ' ';
+  }
+  return rows.join('\n');
+}
+
+// ---------- formatting ----------
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+const MONS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const parse = s => s ? new Date(s) : null;
+const doy = d => Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5);
+const hm = d => pad(d.getHours()) + ':' + pad(d.getMinutes());
+function stamp(s) { const d = parse(s); if (!d) return ''; const t = new Date(); return (d.toDateString() === t.toDateString() ? '' : 'D' + String(doy(d)).padStart(3, '0') + ' ') + hm(d); }
+function ago(s) { const d = parse(s); if (!d) return 'never'; const m = Math.round((Date.now() - d) / 6e4); return m < 1 ? 'now' : m < 60 ? m + 'm ago' : m < 1440 ? Math.round(m / 60) + 'h ago' : Math.round(m / 1440) + 'd ago'; }
+function until(s) { const d = parse(s); if (!d) return '--'; let m = Math.round((d - Date.now()) / 6e4); if (m <= 0) return 'reset due'; const dd = Math.floor(m / 1440); m -= dd * 1440; const h = Math.floor(m / 60); m -= h * 60; return (dd ? dd + 'd' : '') + (dd || h ? h + 'h' : '') + pad(m) + 'm'; }
+function money(n, cur) { if (n == null) return '----'; const neg = n < 0; const s = Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return (neg ? '-' : '') + cur + s; }
+const bar = (pct, cls = '') => `<span class="bar ${cls}"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></span>`;
+const heat = p => p >= 85 ? 'bad' : p >= 60 ? 'warn' : 'ok';
+
+// ---------- render ----------
+function render() {
+  if (!S) return;
+  const st = S.settings;
+  document.documentElement.dataset.hd = st.theme || 'cyan';
+  if (st.handle !== lastHandle) { $('#banner').textContent = big(st.handle || 'LIFE.OS'); lastHandle = st.handle; }
+  $('#promptTxt').textContent = (st.handle || 'life.os').toLowerCase().replace(/\s+/g, '_') + '.public {command:"status"}';
+
+  // today
+  const today = S.today;
+  const todos = S.todos.filter(t => !t.done || (t.done_at || '').slice(0, 10) === today)
+    .sort((a, b) => a.done - b.done);
+  const nDone = todos.filter(t => t.done).length;
+  $('#todoMeta').textContent = todos.length ? `${nDone}/${todos.length}` : '';
+  const max = 10;
+  $('#todoList').innerHTML = todos.length ? todos.slice(0, max).map(t => `<div class="todo row${t.done ? ' done' : ''}" data-id="${t.id}"><span class="chk">[${t.done ? 'x' : ' '}]</span><span class="t row">${esc(t.text)}${t.boring && !t.done ? ' <span class="tag">2xXP</span>' : ''}${!t.done && t.created !== today ? ' <span class="dim">&lt;&lt;</span>' : ''}</span></div>`).join('')
+    + (todos.length > max ? `<div class="dim">+${todos.length - max} more</div>` : '')
+    : '<div class="empty">QUEUE EMPTY.<br>BRAIN DUMP TO CLAUDE<br>OR USE THE REMOTE.</div>';
+
+  // goals
+  const goals = S.goals.filter(g => g.week === S.week || !g.done);
+  const wk = S.week.split('-W')[1];
+  $('#goalTab').innerHTML = `wk${wk}<b>.goals</b>`;
+  $('#goalMeta').textContent = goals.length ? `${goals.filter(g => g.done).length}/${goals.length}` : '';
+  $('#goalList').innerHTML = goals.length ? goals.slice(0, 5).map(g => `<div class="goal"><div class="barline"><span class="row${g.done ? ' dim' : ''}">${g.done ? '[x]' : '&gt;'} ${esc(g.text)}</span><span class="${g.done ? 'ok' : ''}">${g.progress}%</span></div></div>`).join('')
+    : `<div class="empty">NO GOALS SET FOR WK${wk}.</div>`;
+
+  // projects
+  const active = S.projects.filter(p => p.status === 'active').sort((a, b) => b.pct - a.pct);
+  const limit = st.wip_limit;
+  $('#projMeta').textContent = `${active.length}/${limit} active`;
+  const wip = $('#wip');
+  wip.classList.toggle('on', active.length > limit);
+  wip.textContent = active.length > limit ? `!! WIP LIMIT EXCEEDED ${active.length}/${limit}: FINISH SOMETHING !!` : '';
+  const show = active.slice(0, Math.max(limit, 3));
+  $('#projList').innerHTML = show.length ? show.map((p, i) => {
+    const ms = p.milestones || [];
+    const left = ms.filter(m => !m.done).length;
+    const tag = i === 0 && show.length > 1 ? '&lt;&lt; CLOSEST TO SHIPPING' : (left ? `${left} milestone${left > 1 ? 's' : ''} to go` : '');
+    return `<div class="proj${i === 0 ? ' lead' : ''}">
+      <div class="name"><span class="row">&gt; ${esc(p.name.toUpperCase())}</span><small>${tag}</small></div>
+      <div class="barline">${bar(p.pct)}<span>${p.pct}%</span></div>
+      <div class="next row"><span class="dim">next:</span> ${esc(p.next || '(set a next step)')}</div>
+      ${ms.length ? `<div class="ms">${ms.map(m => `<span class="${m.done ? 'd' : ''}">[${m.done ? '#' : ' '}] ${esc(m.title)}</span>`).join('')}</div>` : ''}
+    </div>`;
+  }).join('') : '<div class="empty">NO ACTIVE PROJECTS.<br>PICK ONE. FINISH IT.</div>';
+  const ideas = S.projects.filter(p => p.status === 'idea').length, paused = S.projects.filter(p => p.status === 'paused').length;
+  const shipped = S.projects.filter(p => p.status === 'done');
+  $('#parked').innerHTML = `<span class="dim">PARKED:</span> ${ideas} idea${ideas === 1 ? '' : 's'} / ${paused} paused`;
+  $('#shipped').innerHTML = `<span class="dim">SHIPPED:</span> <span class="ok">${shipped.length}</span>${shipped.length ? ' <span class="dim">last:</span> ' + esc(shipped.sort((a, b) => (b.shipped_at || '').localeCompare(a.shipped_at || ''))[0].name) : ''}`;
+
+  // bank
+  const f = S.finance, cur = f.currency || st.currency || '£';
+  const priv = st.privacy;
+  $('#bal').textContent = priv ? cur + '****.**' : money(f.balance, cur);
+  $('#bankMeta').textContent = f.updated ? (f.source === 'auto' ? 'live ' : '') + ago(f.updated) : '';
+  const h = f.history || [];
+  if (h.length > 1 && !priv) {
+    const d = h[h.length - 1][1] - h[h.length - 2][1];
+    $('#delta').innerHTML = `<span class="${d >= 0 ? 'ok' : 'bad'}">${d >= 0 ? '+' : '-'}${money(Math.abs(d), cur)}</span> <span class="dim">since ${stamp(h[h.length - 2][0])}</span>`;
+  } else $('#delta').innerHTML = f.balance == null ? '<span class="dim">no balance yet: "balance 1234.56"</span>' : '&nbsp;';
+  drawSpark(priv ? [] : h.slice(-30).map(x => x[1]));
+  const b = f.budget;
+  $('#budget').innerHTML = b && b.limit ? `<div class="barline">${bar(100 * b.spent / b.limit, heat(100 * b.spent / b.limit))}<span>${Math.round(100 * b.spent / b.limit)}%</span></div><div class="row"><span class="dim">${esc(b.label)}</span> ${priv ? '***' : money(b.spent, cur) + ' / ' + money(b.limit, cur)}</div>` : '';
+  $('#accts').innerHTML = (f.accounts || []).slice(0, 2).map(a => `<div class="row"><span class="dim">${esc(a.name)}</span> ${priv ? '***' : money(a.balance, cur)}</div>`).join('');
+  $('#budget').querySelectorAll('.bar').forEach(el => el.classList.add(heat(100 * b.spent / b.limit)));
+
+  renderTokens();
+
+  // ta-da
+  const L = S.level;
+  $('#rank').textContent = L.rank;
+  $('#lvl').innerHTML = `<span class="dim">LVL</span> ${pad(L.n)} <span class="dim">XP</span> ${S.xp}${L.next ? ' <span class="dim">/ ' + L.next + '</span>' : ''}`;
+  const span = L.next ? (S.xp - L.floor) / (L.next - L.floor) * 100 : 100;
+  $('#xpline').innerHTML = `${bar(span)}<span class="dim">${L.next ? (L.next - S.xp) + ' to go' : 'MAX'}</span>`;
+  $('#streak').innerHTML = `<span class="dim">STREAK</span> <span class="${S.streak ? 'ok' : ''}">${S.streak}d</span> <span class="dim">TODAY</span> ${S.tada_today} ta-da${S.tada_today === 1 ? '' : 's'}`;
+  if (!$('#tadaMini').textContent) $('#tadaMini').textContent = big('TA-DA!');
+  const recent = S.tada.slice(-12).reverse();
+  const mark = { milestone: '<span class="ok">[MS]</span> ', project: '<span class="mag">[SHIP]</span> ', goal: '<span class="ok">[GOAL]</span> ' };
+  $('#tadaList').innerHTML = recent.length ? recent.map(t => `<div class="row"><span class="pts">+${t.points}</span>${mark[t.kind] || ''}${esc(t.text)} <span class="dim">${stamp(t.at)}</span></div>`).join('')
+    : '<div class="empty">NOTHING YET. DO ONE BORING THING<br>AND SAY "TADA ..." FOR FIREWORKS.</div>';
+
+  // log
+  $('#logList').innerHTML = S.log.slice(-6).reverse().map(l => `<div class="row"><span class="ts">${stamp(l.at)}</span> ${esc(l.text)}</div>`).join('');
+  tick();
+}
+
+function renderTokens() {
+  const t = S.tokens;
+  const line = (label, pct, reset) => pct == null ? `<div class="tok"><span class="dim">${label}</span><span class="dim">no data</span><span></span></div>`
+    : `<div class="tok"><span>${label}</span>${bar(pct, heat(pct))}<span class="${heat(pct)}">${pct}%</span></div><div class="tokreset">resets ${until(reset)}</div>`;
+  $('#tokList').innerHTML = line('SESSION', t.session_pct, t.session_resets) + line('WEEKLY', t.weekly_pct, t.weekly_resets)
+    + `<div class="dim row">${esc(t.plan || '')} plan / upd ${ago(t.updated)}</div>`;
+  $('#tokList').querySelectorAll('.bar').forEach((el, i) => el.classList.add(heat(i ? t.weekly_pct : t.session_pct)));
+  $('#tokMeta').textContent = t.updated && Date.now() - parse(t.updated) > 6 * 36e5 ? 'stale' : '';
+}
+
+function drawSpark(vals) {
+  const svg = $('#spark');
+  if (vals.length < 2) { svg.innerHTML = '<line x1="0" y1="40" x2="300" y2="40" stroke="var(--line)" stroke-dasharray="4 4"/>'; return; }
+  const lo = Math.min(...vals), hi = Math.max(...vals), r = hi - lo || 1;
+  const pts = vals.map((v, i) => [i / (vals.length - 1) * 296 + 2, 42 - (v - lo) / r * 36]);
+  const d = pts.map(p => p.join(',')).join(' ');
+  const [ex, ey] = pts[pts.length - 1];
+  svg.innerHTML = `<line x1="0" y1="${42 - (0 - lo) / r * 36}" x2="300" y2="${42 - (0 - lo) / r * 36}" stroke="var(--bad)" stroke-dasharray="3 5" opacity="${lo < 0 ? .7 : 0}"/>
+    <polygon points="2,44 ${d} 298,44" fill="var(--fg)" opacity=".12"/>
+    <polyline points="${d}" fill="none" stroke="var(--fg)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+    <rect x="${ex - 3}" y="${ey - 3}" width="6" height="6" fill="var(--hi)"/>`;
+}
+
+// ---------- clock, night mode, status ----------
+function tick() {
+  const d = new Date();
+  $('#clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const wk = S ? S.week.split('-W')[1] : '--';
+  $('#date').textContent = `${DAYS[d.getDay()]} ${pad(d.getDate())} ${MONS[d.getMonth()]} ${d.getFullYear()} / WK${wk} / D${String(doy(d)).padStart(3, '0')}`;
+  if (!S) return;
+  const msg = S.message && parse(S.message.until) > d ? S.message.text : '';
+  $('#bcast').textContent = msg ? '// ' + msg : '';
+  const st = S.settings, hr = d.getHours();
+  const night = st.night_start > st.night_end ? (hr >= st.night_start || hr < st.night_end) : (hr >= st.night_start && hr < st.night_end);
+  $('#night').style.opacity = night && $('#reward').hidden ? .62 : 0;
+  const up = Math.floor((Date.now() - bootAt) / 6e4);
+  $('#statusL').innerHTML = authFail ? ` <span class="bad">KEY REJECTED</span> <span class="dim">/ open this page with ?key=... from the Pi's startup log</span>` : DEMO ? ` DEMO MODE <span class="dim">/ sample data, not yours / click a todo or the ta-da panel</span>`
+    : ` ${esc((st.handle || '').toLowerCase())}.dash {link:"<span class="${linkOk ? 'ok' : 'bad'}">${linkOk ? 'LIVE' : 'LOST'}</span>"} <span class="dim">rev</span> ${S.rev} <span class="dim">up</span> ${Math.floor(up / 60)}h${pad(up % 60)}m`;
+  $('#statusR').textContent = 'HACK THE PLANET';
+  if (d.getSeconds() === 0) renderTokens();
+}
+
+// ---------- glitch sparkles in the banner (like the reference) ----------
+const GCOL = ['var(--mag)', 'var(--ok)', 'var(--bad)', 'var(--warn)', 'var(--hi)'];
+function glitch() {
+  const wrap = $('#bannerWrap');
+  for (let i = 0; i < 1 + Math.floor(Math.random() * 3); i++) {
+    const g = document.createElement('span');
+    g.className = 'glitch';
+    g.style.left = (Math.random() * Math.min(wrap.clientWidth, $('#banner').scrollWidth + 30)) + 'px';
+    g.style.top = (Math.random() * 68) + 'px';
+    g.style.background = GCOL[Math.floor(Math.random() * GCOL.length)];
+    wrap.appendChild(g);
+    setTimeout(() => g.remove(), 300 + Math.random() * 900);
+  }
+}
+
+// ---------- rewards ----------
+const queue = [];
+let showing = false;
+const FLAVOR = {
+  boring: [['BOREDOM FIREWALL', 'BYPASSED'], ['ADULTING.EXE', 'TERMINATED'], ['CHORE ICE', 'CRACKED'], ['TEDIUM DAEMON', 'KILLED'], ['DRUDGERY PROTOCOL', 'OVERRIDDEN']],
+  tada: [['MUNDANE SUBROUTINE', 'COMPLETE'], ['REAL-WORLD EXPLOIT', 'SUCCESS'], ['LIFE ADMIN NODE', 'PWNED'], ['TO-DO GRID', 'DEFRAGGED']],
+  todo: [['TASK QUEUE', 'FLUSHED'], ['TODO BUFFER', 'CLEARED'], ['SUBROUTINE', 'RETURNED 0']],
+  goal: [['WEEKLY OBJECTIVE', 'CAPTURED'], ['GOAL MATRIX', 'ALIGNED']],
+  milestone: [['MILESTONE GATE', 'BREACHED'], ['PROJECT MAINFRAME', 'ONE LAYER DEEPER']],
+  project: [['PRODUCTION SERVER', 'DEPLOYED'], ['THE GIBSON', 'IMPRESSED'], ['SHIP SEQUENCE', 'COMPLETE']],
+};
+const FOOT = ['HACK THE PLANET', "YOU'RE IN.", 'ACCESS GRANTED', 'MESS WITH THE BEST', 'THE GIBSON IS IMPRESSED', 'ELITE.'];
+const WORD = { tada: 'TA-DA!', boring: 'TA-DA!', todo: 'DONE!', goal: 'GOAL!', milestone: 'MILESTONE', project: 'SHIPPED!' };
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+function queueReward(ev) { queue.push(ev); if (!showing) nextReward(); }
+
+function nextReward() {
+  const ev = queue.shift();
+  if (!ev) { showing = false; $('#reward').hidden = true; return; }
+  showing = true;
+  const kind = ev.kind in WORD ? ev.kind : 'tada';
+  const el = $('#reward');
+  el.hidden = false;
+  el.classList.toggle('ship', kind === 'project');
+  const rb = $('#rBig');
+  rb.textContent = big(WORD[kind]);
+  rb.style.animation = 'none'; void rb.offsetWidth; rb.style.animation = '';
+  $('#rText').textContent = '"' + ev.text + '"';
+  const [what, res] = pick(FLAVOR[kind]);
+  const dots = (s, n = 26) => s + ' ' + '.'.repeat(Math.max(3, n - s.length)) + ' ';
+  const lines = [dots('> AUTHENTICATING TASK') + 'OK', dots('> ' + what) + res, dots('> XP PAYLOAD') + '+' + ev.points];
+  if (ev.levelup) lines.push(dots('> PRIVILEGE ESCALATION') + 'LVL ' + ev.levelup.n + ' ' + ev.levelup.rank);
+  typeLines(lines);
+  $('#rFoot').textContent = ev.levelup ? 'LEVEL UP' : pick(FOOT);
+  rain(kind === 'project' ? 11000 : kind === 'milestone' ? 8000 : 6000);
+  beep(kind === 'project' ? 3 : kind === 'milestone' || ev.levelup ? 2 : 1);
+  setTimeout(nextReward, kind === 'project' ? 12000 : kind === 'milestone' ? 8500 : 6500);
+}
+
+function typeLines(lines) {
+  const out = $('#rLines');
+  out.textContent = '';
+  const full = lines.join('\n');
+  let i = 0;
+  const step = () => { i += 3; out.textContent = full.slice(0, i); if (i < full.length) setTimeout(step, 28); };
+  setTimeout(step, 500);
+}
+
+let rainTimer = null;
+function rain(ms) {
+  const cv = $('#rain');
+  if (LOWFX || matchMedia('(prefers-reduced-motion: reduce)').matches) { cv.hidden = true; return; }
+  cv.hidden = false;
+  const w = cv.width = cv.clientWidth / 2, h = cv.height = cv.clientHeight / 2; // half-res: cheap on a Pi Zero
+  const ctx = cv.getContext('2d');
+  const cs = 10, cols = Math.ceil(w / cs), drops = Array.from({ length: cols }, () => Math.random() * -40);
+  const fg = getComputedStyle(document.documentElement).getPropertyValue('--fg').trim();
+  const chars = '01#$%&*+<>/\\|=-ABCDEFX';
+  ctx.font = cs + 'px monospace';
+  clearInterval(rainTimer);
+  const end = Date.now() + ms;
+  rainTimer = setInterval(() => {
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = fg;
+    for (let i = 0; i < cols; i++) {
+      if (drops[i] > 0) ctx.fillText(chars[Math.floor(Math.random() * chars.length)], i * cs, drops[i] * cs);
+      drops[i] += 1;
+      if (drops[i] * cs > h && Math.random() > 0.95) drops[i] = 0;
+    }
+    if (Date.now() > end) clearInterval(rainTimer);
+  }, 55);
+}
+
+let actx = null;
+function beep(level) {
+  if (!SOUND) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const notes = [523, 659, 784, 1047, 784, 1047, 1319].slice(0, 3 + level);
+    notes.forEach((f, i) => {
+      const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime + i * 0.09;
+      o.type = 'square'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.05, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+      o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.13);
+    });
+  } catch (e) { /* no audio, no problem */ }
+}
+
+// ---------- data ----------
+const api = p => p + (p.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(KEY);
+async function load() {
+  try {
+    const r = await fetch(api('api/state'), { cache: 'no-store' });
+    authFail = r.status === 401;
+    if (!r.ok) throw new Error(r.status);
+    S = await r.json(); DEMO = false; linkOk = true;
+  } catch (e) {
+    linkOk = false;
+    if (!S || DEMO) { DEMO = true; S = demo(); }
+  }
+  render();
+}
+function connect() {
+  if (DEMO || !window.EventSource) return;
+  const es = new EventSource(api('api/events'));
+  es.onopen = () => { linkOk = true; };
+  es.onerror = () => { linkOk = false; };
+  es.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === 'state') load();
+    else if (ev.type === 'reward') queueReward(ev);
+  };
+}
+
+// ---------- demo (shown when there is no server, e.g. a preview) ----------
+function demo() {
+  const n = new Date(), D = (d, h = 0) => { const x = new Date(n); x.setDate(x.getDate() + d); x.setHours(x.getHours() + h); return x.toISOString().slice(0, 19); };
+  const td = D(0).slice(0, 10);
+  const t = new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())); t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  const week = t.getUTCFullYear() + '-W' + pad(Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 864e5 + 1) / 7));
+  const hist = []; let bal = 2140; for (let i = 20; i >= 0; i--) { bal += (Math.sin(i * 1.7) * 60) - (i % 7 === 0 ? -900 : 25); hist.push([D(-i), Math.round(bal * 100) / 100]); }
+  return {
+    rev: 0, today: td, week, xp: 612, streak: 5, tada_today: 3,
+    level: { n: 4, rank: 'CONSOLE COWBOY', floor: 500, next: 900 },
+    settings: { theme: qs.get('theme') || 'cyan', handle: 'LIFE.OS', wip_limit: 3, privacy: false, currency: '£', night_start: 23, night_end: 7 },
+    todos: [
+      { id: 't1', text: 'Flash SD card for the Pi', created: td, done: false, boring: false },
+      { id: 't2', text: 'Reply to landlord email', created: D(-1).slice(0, 10), done: false, boring: true },
+      { id: 't3', text: 'Book dentist', created: td, done: false, boring: true },
+      { id: 't4', text: 'Buy HDMI mini adapter', created: td, done: false, boring: false },
+      { id: 't5', text: 'Empty dishwasher', created: td, done: true, done_at: D(0, -2), boring: true },
+      { id: 't6', text: '20 min walk', created: td, done: true, done_at: D(0, -1) },
+    ],
+    goals: [
+      { id: 'g1', text: 'Hackdash running on the TV', week, progress: 40, done: false },
+      { id: 'g2', text: 'Gym x3', week, progress: 66, done: false },
+      { id: 'g3', text: 'Clear inbox to zero', week, progress: 100, done: true },
+    ],
+    projects: [
+      { id: 'p1', name: 'Hackdash', status: 'active', pct: 25, next: 'run setup/install.sh on the Pi', milestones: [
+        { id: 'm1', title: 'server runs', done: true }, { id: 'm2', title: 'on the TV', done: false }, { id: 'm3', title: 'Claude connector', done: false }, { id: 'm4', title: 'live bank feed', done: false }] },
+      { id: 'p2', name: 'Example: portfolio site', status: 'active', pct: 60, next: 'write the about page', milestones: [
+        { id: 'm5', title: 'domain', done: true }, { id: 'm6', title: 'design', done: true }, { id: 'm7', title: '3 case studies', done: true }, { id: 'm8', title: 'about page', done: false }, { id: 'm9', title: 'launch', done: false }] },
+      { id: 'p3', name: 'Example: garden bot', status: 'paused', pct: 30, milestones: [] },
+      { id: 'p4', name: 'Example idea A', status: 'idea', pct: 0, milestones: [] },
+      { id: 'p5', name: 'Example idea B', status: 'idea', pct: 0, milestones: [] },
+      { id: 'p6', name: 'Example: bookshelf', status: 'done', pct: 100, shipped_at: D(-12), milestones: [] },
+    ],
+    tada: [
+      { text: 'Called the bank', points: 30, at: D(-1, -3) }, { text: 'Filed receipts', points: 25, at: D(-1, -1) },
+      { text: 'Changed bedsheets', points: 15, at: D(0, -5) }, { text: 'Emptied dishwasher', points: 25, at: D(0, -2) }, { text: '20 min walk', points: 10, at: D(0, -1) },
+    ],
+    finance: { balance: hist[hist.length - 1][1], currency: '£', updated: D(0, -1), source: 'manual', history: hist, accounts: [{ name: 'Savings', balance: 4210 }], budget: { label: 'OCT SPEND', spent: 612, limit: 900 } },
+    tokens: { plan: 'Pro', session_pct: 38, weekly_pct: 71, session_resets: D(0, 3), weekly_resets: D(2, 5), updated: D(0, -1) },
+    log: [
+      { at: D(0, -5), text: 'TA-DA Changed bedsheets +15xp' }, { at: D(0, -4), text: 'queued Flash SD card for the Pi' },
+      { at: D(0, -3), text: 'balance updated' }, { at: D(0, -2), text: 'done Empty dishwasher +25xp' }, { at: D(0, -1), text: 'claude usage 38% / 71%' },
+    ],
+    message: null,
+  };
+}
+document.addEventListener('click', e => {
+  if (!DEMO) return;
+  const row = e.target.closest('.todo');
+  if (row) {
+    const t = S.todos.find(x => x.id === row.dataset.id);
+    if (!t || t.done) return;
+    t.done = true; t.done_at = new Date().toISOString().slice(0, 19);
+    const pts = t.boring ? 25 : 10; S.xp += pts;
+    S.log.push({ at: t.done_at, text: `done ${t.text} +${pts}xp` });
+    S.tada.push({ text: t.text, points: pts, at: t.done_at }); S.tada_today++;
+    render(); queueReward({ kind: t.boring ? 'boring' : 'todo', text: t.text, points: pts });
+  } else if (e.target.closest('#p-tada')) {
+    const text = pick(['Took the bins out', 'Paid the council tax', 'Cleaned the hob', 'Sorted the recycling']);
+    S.xp += 15; S.tada.push({ text, points: 15, at: new Date().toISOString().slice(0, 19) }); S.tada_today++;
+    render(); queueReward({ kind: 'tada', text, points: 15, levelup: S.xp >= 900 && S.xp - 15 < 900 ? { n: 5, rank: 'NETRUNNER' } : undefined });
+  }
+});
+
+// ---------- fit the 1280x720 stage to the screen ----------
+let shift = [0, 0];
+function fit() {
+  const stack = innerWidth < 760;
+  document.documentElement.classList.toggle('stack', stack);
+  if (stack) return;
+  const s = Math.min(innerWidth / 1280, innerHeight / 720);
+  const x = (innerWidth - 1280 * s) / 2 + shift[0], y = (innerHeight - 720 * s) / 2 + shift[1];
+  $('#stage').style.transform = `translate(${x}px,${y}px) scale(${s})`;
+}
+addEventListener('resize', fit);
+// nudge everything a few pixels every 10 minutes so static text doesn't burn into an old screen
+setInterval(() => { shift = [Math.round(Math.random() * 6 - 3), Math.round(Math.random() * 6 - 3)]; fit(); }, 6e5);
+
+fit();
+load().then(connect);
+setInterval(tick, 1000);
+setInterval(() => { if (!DEMO) load(); }, 60000); // belt and braces if SSE drops
+if (!LOWFX) setInterval(glitch, 2600);
+})();
+</script>
