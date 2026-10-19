@@ -178,6 +178,15 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
 
+def focus_ticker():
+    while True:
+        try:
+            STORE.focus_tick()
+        except Exception as e:
+            sys.stderr.write(f"focus tick failed: {e}\n")
+        time.sleep(1)
+
+
 def finance_poller():
     """Optional: run HACKDASH_FINANCE_CMD every N minutes. It must print a number or
     JSON like {"balance": 1234.5, "accounts": [{"name": "Main", "balance": 1000}]}.
@@ -201,6 +210,7 @@ def main():
     srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     srv.daemon_threads = True
     threading.Thread(target=finance_poller, daemon=True).start()
+    threading.Thread(target=focus_ticker, daemon=True).start()
     print(f"""
   HACKDASH online on port {port}
   TV:     http://localhost:{port}/?key={CFG['key']}

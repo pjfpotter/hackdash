@@ -17,6 +17,7 @@ The user starts lots of projects and rarely finishes them. Help gently:
   in for an active one. When the limit blocks something, say which active project is closest to shipping.
 - Keep each active project's next_step concrete and small, and suggest the next milestone.
 - When you reply, mention the project closest to its next milestone in one line. Don't lecture.
+When the user says they're about to work on something, offer to start focus_timer with that task (default 25 min).
 Money: only record figures the user actually gives you. Never guess a balance.
 Claude token usage has no API: the user reads percentages from claude.ai Settings > Usage and tells you.
 Finish with a short summary of what changed on the dash."""
@@ -75,6 +76,11 @@ TOOLS = [
          "handle": {"type": "string", "description": "Banner text, max 10 chars"},
          "wip_limit": {"type": "integer", "minimum": 1, "maximum": 9},
          "privacy": {"type": "boolean", "description": "Hide money on screen"}}}},
+    {"name": "focus_timer", "description": "Run the Tears in Rain focus (pomodoro) timer full-screen on the TV. A finished session is logged as a ta-da with XP.",
+     "inputSchema": {"type": "object", "required": ["action"], "properties": {
+         "action": {"type": "string", "enum": ["start", "pause", "resume", "stop"]},
+         "minutes": {"type": "integer", "minimum": 1, "maximum": 180, "description": "For start; default 25"},
+         "task": {"type": "string", "description": "For start: what the user is focusing on, short"}}}},
     {"name": "broadcast", "description": "Show a message across the top of the TV for a while.",
      "inputSchema": {"type": "object", "required": ["message"], "properties": {
          "message": _str, "seconds": {"type": "integer", "description": "Default 120"}}}},
@@ -109,6 +115,10 @@ def _call(store, name, a):
                                a.get("weekly_resets_at"), a.get("note"), a.get("plan"))
     elif name == "dashboard_settings":
         out = store.settings(a.get("theme"), a.get("handle"), a.get("wip_limit"), a.get("privacy"))
+    elif name == "focus_timer":
+        act = a["action"]
+        out = (store.focus_start(a.get("minutes", 25), a.get("task", "")) if act == "start" else
+               store.focus_pause() if act == "pause" else store.focus_resume() if act == "resume" else store.focus_stop())
     elif name == "broadcast":
         out = store.broadcast(a["message"], a.get("seconds", 120))
     else:

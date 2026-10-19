@@ -139,7 +139,34 @@ header { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 330px; g
 .stack #rBig { font-size: 12px; line-height: 11px; }
 .stack #rText { font-size: 26px; }
 .stack #rLines { font-size: 17px; }
-@media (prefers-reduced-motion: reduce) { .cursor, #wip.on, #rBig { animation: none; } }
+/* focus mode: Tears in Rain takes over the screen */
+#focus { position: absolute; inset: 0; z-index: 30; background: var(--bg); padding: 12px; display: grid; gap: 14px 12px;
+  grid-template-columns: 540px 1fr; grid-template-rows: 30px 1fr 132px; }
+#focus > * { position: relative; z-index: 1; min-width: 0; min-height: 0; }
+#frain { position: absolute !important; inset: 0; width: 100%; height: 100%; z-index: 0 !important; opacity: .6; }
+.fhead { grid-column: 1 / -1; display: flex; gap: 16px; align-items: center; font-size: 24px; letter-spacing: .06em; border-bottom: 1px dashed var(--line); }
+.fhead .sp { flex: 1; }
+.fchip { border: 1px solid currentColor; padding: 0 8px; line-height: 1.1; color: var(--hi); }
+#focus.paused .fchip { color: var(--warn); }
+#fclock { color: var(--hi); font-variant-numeric: tabular-nums; }
+.fdial { display: flex; align-items: center; justify-content: center; }
+#fdial { margin: 0; font-family: var(--font); line-height: 1.1; color: var(--dim); white-space: pre; text-shadow: none; }
+#fdial .f { color: var(--fg); } #fdial .e { color: var(--hi); text-shadow: 0 0 8px var(--fg); } #fdial .o { color: var(--line); opacity: .6; }
+#fdial .r { color: var(--dim); } #fdial .rf { color: var(--fg); } #fdial .t { color: var(--dim); } #fdial .h { color: var(--hi); }
+.fside { display: flex; flex-direction: column; gap: 14px; padding: 22px 18px 14px; }
+#fdigits { margin: 0; font-family: var(--font); line-height: .82; color: var(--hi); white-space: pre; text-shadow: 0 0 14px var(--fg); }
+#focus.paused #fdigits { color: var(--warn); text-shadow: none; }
+#fends { font-size: 24px; color: var(--dim); } #fends b { color: var(--fg); font-weight: normal; }
+#ftask { font-size: 34px; color: var(--hi); border-bottom: 1px dashed var(--line); padding-bottom: 4px; }
+#ftask .p { color: var(--fg); }
+#fhint { font-size: 20px; color: var(--dim); margin-top: auto; }
+.fquote { grid-column: 1 / -1; padding: 18px 16px 8px; }
+#fquote { margin: 0; font-size: 26px; line-height: 1.12; color: var(--dim); }
+#fquote .lit { color: var(--hi); } #fquote .die { color: var(--bad); text-shadow: 0 0 12px var(--bad); }
+#fquote .cur { display: inline-block; width: .5em; height: .9em; background: var(--fg); vertical-align: -.1em; animation: blink 1s steps(2) infinite; }
+.fattr { margin: 4px 0 0; font-size: 17px; color: var(--dim); letter-spacing: .1em; }
+.stack #focus { position: fixed; grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; overflow: auto; }
+@media (prefers-reduced-motion: reduce) { .cursor, #wip.on, #rBig, #fquote .cur { animation: none; } }
 </style>
 
 <div id="stage">
@@ -174,6 +201,13 @@ header { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 330px; g
 
   <div id="status"><span><span class="k">&gt;&gt;</span><span id="statusL"></span> <span class="cursor"></span></span><span id="statusR"></span></div>
 
+  <div id="focus" hidden>
+    <canvas id="frain"></canvas>
+    <div class="fhead"><span class="hi">TEARS IN RAIN</span><span class="dim">// focus unit N6MAA10816</span><span class="fchip" id="fchip">RUNNING</span><span class="sp"></span><span id="fclock"></span></div>
+    <section class="panel fdial"><h2 class="tab">time<b>.left</b></h2><pre id="fdial"></pre></section>
+    <section class="panel fside"><h2 class="tab">focus<b>.session</b></h2><pre id="fdigits"></pre><div id="fends"></div><div id="ftask"></div><div id="fhint">phone: "pause" / "resume" / "stop"</div></section>
+    <section class="panel fquote"><h2 class="tab">trans<b>mission</b></h2><p id="fquote"></p><p class="fattr">ROY BATTY / NEXUS-6 COMBAT MODEL / INCEPT DATE 08 JAN 2016</p></section>
+  </div>
   <div id="reward" hidden><canvas id="rain"></canvas><div class="rbox"><pre id="rBig"></pre><div id="rText"></div><pre id="rLines"></pre><div id="rFoot"></div></div></div>
 </div>
 <div id="night"></div>
@@ -191,7 +225,7 @@ const LOWFX = qs.has('lowfx');
 const SOUND = qs.get('sound') !== '0';
 if (LOWFX) document.documentElement.classList.add('lowfx');
 
-let S = null, bootBuild = null, DEMO = false, authFail = false, linkOk = false, lastHandle = null, bootAt = Date.now();
+let S = null, skew = 0, bootBuild = null, DEMO = false, authFail = false, linkOk = false, lastHandle = null, bootAt = Date.now();
 
 // ---------- tiny 5-row block font for banners ----------
 const F = {
@@ -201,7 +235,7 @@ const F = {
   M:'#   #|## ##|# # #|#   #|#   #', N:'#   #|##  #|# # #|#  ##|#   #', O:' ### |#   #|#   #|#   #| ### ', P:'#### |#   #|#### |#    |#    ',
   Q:' ### |#   #|# # #|#  # | ## #', R:'#### |#   #|#### |#  # |#   #', S:' ####|#    | ### |    #|#### ', T:'#####|  #  |  #  |  #  |  #  ',
   U:'#   #|#   #|#   #|#   #| ### ', V:'#   #|#   #| # # | # # |  #  ', W:'#   #|#   #|# # #|## ##|#   #', X:'#   #| # # |  #  | # # |#   #',
-  Y:'#   #| # # |  #  |  #  |  #  ', Z:'#####|   # |  #  | #   |#####', 0:' ### |#  ##|# # #|##  #| ### ', 1:' # |## | # | # |###',
+  Y:'#   #| # # |  #  |  #  |  #  ', Z:'#####|   # |  #  | #   |#####', 0:' ### |#   #|#   #|#   #| ### ', 1:' # |## | # | # |###',
   2:'#### |    #| ### |#    |#####', 3:'#### |    #| ### |    #|#### ', 4:'#   #|#   #|#####|    #|    #', 5:'#####|#    |#### |    #|#### ',
   6:' ### |#    |#### |#   #| ### ', 7:'#####|    #|   # |  #  |  #  ', 8:' ### |#   #| ### |#   #| ### ', 9:' ### |#   #| ####|    #| ### ',
   '.':' | | | |#', '!':'#|#|#| |#', '-':'    |    |####|    |    ', '_':'    |    |    |    |####', ' ':'  |  |  |  |  ', ':':' |#| |#| '
@@ -305,10 +339,10 @@ function render() {
   $('#lvl').innerHTML = `<span class="dim">LVL</span> ${pad(L.n)} <span class="dim">XP</span> ${S.xp}${L.next ? ' <span class="dim">/ ' + L.next + '</span>' : ''}`;
   const span = L.next ? (S.xp - L.floor) / (L.next - L.floor) * 100 : 100;
   $('#xpline').innerHTML = `${bar(span)}<span class="dim">${L.next ? (L.next - S.xp) + ' to go' : 'MAX'}</span>`;
-  $('#streak').innerHTML = `<span class="dim">STREAK</span> <span class="${S.streak ? 'ok' : ''}">${S.streak}d</span> <span class="dim">TODAY</span> ${S.tada_today} ta-da${S.tada_today === 1 ? '' : 's'}`;
+  $('#streak').innerHTML = `<span class="dim">STREAK</span> <span class="${S.streak ? 'ok' : ''}">${S.streak}d</span> <span class="dim">TODAY</span> ${S.tada_today} ta-da${S.tada_today === 1 ? '' : 's'}${S.focus_today ? ` <span class="dim">FOCUS</span> ${S.focus_today}m` : ''}`;
   if (!$('#tadaMini').textContent) $('#tadaMini').textContent = big('TA-DA!');
   const recent = S.tada.slice(-12).reverse();
-  const mark = { milestone: '<span class="ok">[MS]</span> ', project: '<span class="mag">[SHIP]</span> ', goal: '<span class="ok">[GOAL]</span> ' };
+  const mark = { milestone: '<span class="ok">[MS]</span> ', project: '<span class="mag">[SHIP]</span> ', goal: '<span class="ok">[GOAL]</span> ', focus: '<span class="warn">[FOCUS]</span> ' };
   $('#tadaList').innerHTML = recent.length ? recent.map(t => `<div class="row"><span class="pts">+${t.points}</span>${mark[t.kind] || ''}${esc(t.text)} <span class="dim">${stamp(t.at)}</span></div>`).join('')
     : '<div class="empty">NOTHING YET. DO ONE BORING THING<br>AND SAY "TADA ..." FOR FIREWORKS.</div>';
 
@@ -357,6 +391,7 @@ function tick() {
     : ` ${esc((st.handle || '').toLowerCase())}.dash {link:"<span class="${linkOk ? 'ok' : 'bad'}">${linkOk ? 'LIVE' : 'LOST'}</span>"} <span class="dim">rev</span> ${S.rev} <span class="dim">up</span> ${Math.floor(up / 60)}h${pad(up % 60)}m`;
   $('#statusR').textContent = 'HACK THE PLANET';
   if (d.getSeconds() === 0) renderTokens();
+  renderFocus();
 }
 
 // ---------- glitch sparkles in the banner (like the reference) ----------
@@ -383,10 +418,11 @@ const FLAVOR = {
   todo: [['TASK QUEUE', 'FLUSHED'], ['TODO BUFFER', 'CLEARED'], ['SUBROUTINE', 'RETURNED 0']],
   goal: [['WEEKLY OBJECTIVE', 'CAPTURED'], ['GOAL MATRIX', 'ALIGNED']],
   milestone: [['MILESTONE GATE', 'BREACHED'], ['PROJECT MAINFRAME', 'ONE LAYER DEEPER']],
+  focus: [['C-BEAMS', 'GLITTERED'], ['ATTACK SHIPS', 'ON FIRE'], ['THIS MOMENT', 'SAVED FROM THE RAIN'], ['TANNHAUSER GATE', 'PASSED']],
   project: [['PRODUCTION SERVER', 'DEPLOYED'], ['THE GIBSON', 'IMPRESSED'], ['SHIP SEQUENCE', 'COMPLETE']],
 };
 const FOOT = ['HACK THE PLANET', "YOU'RE IN.", 'ACCESS GRANTED', 'MESS WITH THE BEST', 'THE GIBSON IS IMPRESSED', 'ELITE.'];
-const WORD = { tada: 'TA-DA!', boring: 'TA-DA!', todo: 'DONE!', goal: 'GOAL!', milestone: 'MILESTONE', project: 'SHIPPED!' };
+const WORD = { focus: 'FOCUS!', tada: 'TA-DA!', boring: 'TA-DA!', todo: 'DONE!', goal: 'GOAL!', milestone: 'MILESTONE', project: 'SHIPPED!' };
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
 function queueReward(ev) { queue.push(ev); if (!showing) nextReward(); }
@@ -408,9 +444,9 @@ function nextReward() {
   const lines = [dots('> AUTHENTICATING TASK') + 'OK', dots('> ' + what) + res, dots('> XP PAYLOAD') + '+' + ev.points];
   if (ev.levelup) lines.push(dots('> PRIVILEGE ESCALATION') + 'LVL ' + ev.levelup.n + ' ' + ev.levelup.rank);
   typeLines(lines);
-  $('#rFoot').textContent = ev.levelup ? 'LEVEL UP' : pick(FOOT);
+  $('#rFoot').textContent = ev.levelup ? 'LEVEL UP' : kind === 'focus' ? 'TIME TO REST.' : pick(FOOT);
   rain(kind === 'project' ? 11000 : kind === 'milestone' ? 8000 : 6000);
-  beep(kind === 'project' ? 3 : kind === 'milestone' || ev.levelup ? 2 : 1);
+  if (kind === 'focus') chime(); else beep(kind === 'project' ? 3 : kind === 'milestone' || ev.levelup ? 2 : 1);
   setTimeout(nextReward, kind === 'project' ? 12000 : kind === 'milestone' ? 8500 : 6500);
 }
 
@@ -448,7 +484,137 @@ function rain(ms) {
   }, 55);
 }
 
+// ---------- focus mode, ported from Tears in Rain ----------
+const QUOTE = 'I’ve seen things you people wouldn’t believe. Attack ships on fire off the shoulder of Orion. I watched C-beams glitter in the dark near the Tannhäuser Gate. All those moments will be lost in time, like tears in rain. Time to die.';
+const DIE = 'Time to die.';
+const DR = 23, LH = 1.1;
+let CW = 0.5, DC = 43, lastDial = '', lastLit = -1, lastDigits = '';
+function measureFont() {
+  const sp = document.createElement('span');
+  sp.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font-size:100px;font-family:' + getComputedStyle(document.body).fontFamily;
+  sp.textContent = '##########';
+  document.body.appendChild(sp);
+  const w = sp.getBoundingClientRect().width / 1000;
+  sp.remove();
+  if (w > 0.25 && w < 1) CW = w;
+  DC = 2 * Math.ceil((DR / 2 - 2.4 + 2.1) / (CW / LH)) + 1;
+  lastDial = ''; lastDigits = '';
+}
+function rimChar(dx, dy) {
+  const a = Math.atan2(dy, dx) * 180 / Math.PI, A = Math.abs(a);
+  if (A < 22.5 || A > 157.5) return '|';
+  if (A > 67.5 && A < 112.5) return '-';
+  return ((a < 0 && A < 90) || (a > 0 && A > 90)) ? '\\' : '/';
+}
+function dialHTML(f) {
+  const AR = CW / LH, R = DR / 2 - 2.4, cx = (DC - 1) / 2, cy = (DR - 1) / 2, TAU = Math.PI * 2, sweep = f * TAU;
+  const inside = (c, r) => { const x = (c - cx) * AR, y = r - cy; return x * x + y * y <= R * R; };
+  const ticks = {};
+  for (let i = 0; i < 12; i++) { const a = i * TAU / 12; ticks[Math.round(cy - Math.cos(a) * (R + 1.8)) + ',' + Math.round(cx + Math.sin(a) * (R + 1.8) / AR)] = i ? '+' : 'v'; }
+  const out = [];
+  for (let r = 0; r < DR; r++) {
+    let line = '', cur = '', buf = '';
+    for (let c = 0; c < DC; c++) {
+      const dx = (c - cx) * AR, dy = r - cy, d = Math.hypot(dx, dy);
+      let th = Math.atan2(dx, -dy); if (th < 0) th += TAU;
+      let ch = ' ', k = '';
+      if (r === Math.round(cy) && c === Math.round(cx)) { ch = '+'; k = 'h'; }
+      else if (inside(c, r)) {
+        if (f > 0 && th <= sweep) { ch = '#'; k = (f < 0.999 && (sweep - th) * d < 0.9) ? 'e' : 'f'; }
+        else { ch = ((r + c) & 1) ? ' ' : '.'; k = 'o'; }
+      } else if (inside(c - 1, r) || inside(c + 1, r) || inside(c, r - 1) || inside(c, r + 1)) { ch = rimChar(dx, dy); k = (f > 0 && th <= sweep) ? 'rf' : 'r'; }
+      else if (ticks[r + ',' + c]) { ch = ticks[r + ',' + c]; k = 't'; }
+      if (k !== cur) { if (buf) line += cur ? `<span class="${cur}">${buf}</span>` : buf; buf = ''; cur = k; }
+      buf += ch;
+    }
+    if (buf) line += cur ? `<span class="${cur}">${buf}</span>` : buf;
+    out.push(line);
+  }
+  return out.join('\n');
+}
+function focusRemaining(fo) {
+  if (fo.status === 'paused') return fo.remaining * 1000;
+  return Math.max(0, parse(fo.ends_at) - (Date.now() + skew));
+}
+function renderFocus() {
+  const fo = S && S.focus, box = $('#focus');
+  if (!fo) { if (!box.hidden) { box.hidden = true; stopFocusRain(); } return; }
+  if (box.hidden) { box.hidden = false; measureFont(); startFocusRain(); }
+  box.classList.toggle('paused', fo.status === 'paused');
+  const total = fo.minutes * 60000, rem = focusRemaining(fo), f = Math.min(1, rem / total);
+  const secs = Math.ceil(rem / 1000), txt = pad(Math.floor(secs / 60)) + ':' + pad(secs % 60);
+  // size the dial and digits to their panels (layout px, unaffected by the stage scale)
+  const dp = $('#fdial').parentElement, sp = $('#fdigits').parentElement;
+  $('#fdial').style.fontSize = Math.max(5, Math.min((dp.clientWidth - 24) / (DC * CW), (dp.clientHeight - 30) / (DR * LH))) + 'px';
+  if (txt !== lastDigits) {
+    const b = big(txt);
+    $('#fdigits').textContent = b;
+    $('#fdigits').style.fontSize = Math.min(70, (sp.clientWidth - 36) / (b.split('\n')[0].length * CW)) + 'px';
+    lastDigits = txt;
+  }
+  const dk = Math.round(f * 1440) + fo.status + DC;
+  if (dk !== lastDial) { $('#fdial').innerHTML = dialHTML(f); lastDial = dk; }
+  $('#fchip').textContent = fo.status === 'paused' ? 'PAUSED' : rem <= 0 ? 'TIME TO DIE' : 'RUNNING';
+  const now = new Date(Date.now() + skew);
+  $('#fclock').textContent = hm(now);
+  $('#fends').innerHTML = fo.status === 'paused' ? `paused / <b>${Math.ceil(rem / 60000)} min</b> left`
+    : `ends <b>${hm(parse(fo.ends_at))}</b> / started ${hm(parse(fo.started))} / ${fo.minutes} min`;
+  $('#ftask').innerHTML = `<span class="p">&gt; task</span> ${esc(fo.task || 'one thing, right now')}`;
+  const n = QUOTE.length, lit = rem <= 0 ? n : Math.floor(n * (1 - f));
+  if (lit !== lastLit) {
+    $('#fquote').innerHTML = lit >= n ? esc(QUOTE.slice(0, n - DIE.length)) + `<span class="die">${DIE}</span>`
+      : `<span class="lit">${esc(QUOTE.slice(0, lit))}</span><span class="cur"></span>${esc(QUOTE.slice(lit))}`;
+    lastLit = lit;
+  }
+}
+// rain thickens as the session runs out; half resolution and ~12fps to suit a Pi Zero
+let frainTimer = null;
+function startFocusRain() {
+  const cv = $('#frain');
+  if (LOWFX || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const w = cv.width = Math.round(cv.clientWidth / 2), h = cv.height = Math.round(cv.clientHeight / 2), cell = 9;
+  const ctx = cv.getContext('2d');
+  const fg = getComputedStyle(document.documentElement).getPropertyValue('--fg').trim();
+  const drops = Array.from({ length: Math.ceil(w / cell) }, (_, i) => ({ x: i * cell + 2, y: Math.random() * h, v: 3 + Math.random() * 5, len: 3 + Math.floor(Math.random() * 6), gate: Math.random() }));
+  ctx.font = '9px monospace';
+  clearInterval(frainTimer);
+  frainTimer = setInterval(() => {
+    const fo = S && S.focus;
+    if (!fo) return;
+    const lvl = 0.1 + 0.9 * (1 - Math.min(1, focusRemaining(fo) / (fo.minutes * 60000)));
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = fg;
+    for (const d of drops) {
+      if (fo.status === 'running') d.y += d.v;
+      if (d.y - d.len * cell > h) { d.y = -Math.random() * h * 0.3; d.gate = Math.random(); }
+      if (d.gate > lvl) continue;
+      for (let j = 0; j < d.len; j++) { ctx.globalAlpha = (1 - j / d.len) * 0.35; ctx.fillText(j % 3 === 2 ? ':' : '|', d.x, d.y - j * cell); }
+    }
+    ctx.globalAlpha = 1;
+  }, 80);
+}
+// re-measure once the retro font has actually loaded, or the dial comes out oval
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measureFont(); if (S) renderFocus(); });
+function stopFocusRain() { clearInterval(frainTimer); frainTimer = null; }
+
 let actx = null;
+// the soft CS-80-ish swell from Tears in Rain, for the end of a focus session
+function chime() {
+  if (!SOUND) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const t0 = actx.currentTime + 0.05;
+    [[293.66, 0], [349.23, 0.32], [440, 0.64], [587.33, 0.96]].forEach(([freq, at]) => {
+      const t = t0 + at, dur = 2.4, g = actx.createGain(), lp = actx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(300, t); lp.frequency.linearRampToValueAtTime(2400, t + dur * 0.35); lp.frequency.linearRampToValueAtTime(500, t + dur);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07, t + 0.12); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      lp.connect(g); g.connect(actx.destination);
+      [-7, 7].forEach(cents => { const o = actx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq; o.detune.value = cents; o.connect(lp); o.start(t); o.stop(t + dur + 0.05); });
+    });
+  } catch (e) { /* no audio */ }
+}
 function beep(level) {
   if (!SOUND) return;
   try {
@@ -472,6 +638,7 @@ async function load() {
     authFail = r.status === 401;
     if (!r.ok) throw new Error(r.status);
     S = await r.json(); DEMO = false; linkOk = true;
+    skew = Date.parse(S.now) - Date.now();
     // server restarted (e.g. after an update): reload to pick up the new page
     if (S.build && bootBuild && S.build !== bootBuild) { location.reload(); return; }
     bootBuild = bootBuild || S.build;

@@ -87,6 +87,7 @@ DEFAULT_STATE = {
                "session_resets": None, "weekly_resets": None, "updated": None, "note": ""},
     "log": [],
     "message": None,
+    "focus": None,
 }
 
 
@@ -168,6 +169,7 @@ class Store:
         }
         s["streak"] = self._streak(s["activity_days"])
         s["tada_today"] = sum(1 for t in s["tada"] if t["at"][:10] == s["today"])
+        s["focus_today"] = sum(t.get("minutes", 0) for t in s["tada"] if t["at"][:10] == s["today"])
         for p in s["projects"]:
             p["pct"] = self._project_pct(p)
         return s
@@ -222,6 +224,10 @@ class Store:
             out.append(f"\nBALANCE {f['currency'] or cur}{f['balance']:,.2f} (updated {f['updated']}, {f['source']})")
         tk = s["tokens"]
         out.append(f"TOKENS session {tk['session_pct']}% weekly {tk['weekly_pct']}% (updated {tk['updated']})")
+        fo = s["focus"]
+        if fo:
+            out.append(f"FOCUS {fo['status']}: {fo['minutes']}m {fo['task']} (ends {fo['ends_at']})")
+        out.append(f"FOCUS TODAY {s['focus_today']} min")
         out.append("\nRECENT TA-DAS: " + "; ".join(t["text"] for t in s["tada"][-5:]))
         return "\n".join(out)
 
@@ -504,6 +510,59 @@ class Store:
                 st["currency"] = str(currency)[:3]
             self._commit()
             return f"settings: {st}"
+
+    # ---------- focus timer (Tears in Rain) ----------
+    def focus_start(self, minutes=25, task=""):
+        with self.lock:
+            m = max(1, min(180, int(minutes or 25)))
+            task = str(task or "").strip()[:80]
+            self.state["focus"] = {"task": task, "minutes": m, "started": iso(), "status": "running",
+                                   "ends_at": iso(now() + dt.timedelta(minutes=m)), "remaining": m * 60}
+            self._log("focus", f"focus {m}m {task}".strip())
+            self._commit()
+            return f"focus: {m} min{' on ' + task if task else ''}, ends {self.state['focus']['ends_at'][11:16]}"
+
+    def focus_pause(self):
+        with self.lock:
+            f = self.state["focus"]
+            if not f or f["status"] != "running":
+                return "no focus session running"
+            f["remaining"] = max(1, int((dt.datetime.fromisoformat(f["ends_at"]) - now()).total_seconds()))
+            f["status"], f["ends_at"] = "paused", None
+            self._commit()
+            return f"focus paused, {f['remaining'] // 60}m{f['remaining'] % 60:02d}s left"
+
+    def focus_resume(self):
+        with self.lock:
+            f = self.state["focus"]
+            if not f or f["status"] != "paused":
+                return "no paused focus session"
+            f["status"], f["ends_at"] = "running", iso(now() + dt.timedelta(seconds=f["remaining"]))
+            self._commit()
+            return f"focus resumed, ends {f['ends_at'][11:16]}"
+
+    def focus_stop(self):
+        with self.lock:
+            f = self.state["focus"]
+            if not f:
+                return "no focus session to stop"
+            self.state["focus"] = None
+            self._log("focus", "focus stopped early")
+            self._commit()
+            return "focus stopped (no XP, but no judgement either)"
+
+    def focus_tick(self):
+        """Called every second by the server; finishes a session whose time is up."""
+        with self.lock:
+            f = self.state["focus"]
+            if not f or f["status"] != "running" or now() < dt.datetime.fromisoformat(f["ends_at"]):
+                return
+            self.state["focus"] = None
+            label = f"{f['minutes']}m focus" + (f": {f['task']}" if f["task"] else "")
+            ev = self._award("focus", label, max(5, f["minutes"]))
+            self.state["tada"][-1]["minutes"] = f["minutes"]
+            self._log("focus", f"FOCUS DONE {label} +{ev['points']}xp")
+            self._commit([ev])
 
     def broadcast(self, text, seconds=120):
         with self.lock:

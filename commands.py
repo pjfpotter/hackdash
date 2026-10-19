@@ -22,6 +22,8 @@ tokens weekly 70 resets 2d4h
 theme amber                  cyan green amber
 privacy on                   hide money on screen
 say back in 5                show a message on the TV
+focus 25 write about page    Tears in Rain focus timer on the TV
+pause / resume / stop        control the focus timer
 delete milk                  delete an item
 anything else                becomes a todo"""
 
@@ -55,7 +57,7 @@ def run(store, text):
 
 def run_line(store, line):
     m = re.match(r"(?i)^(to[\s-]?dos?|add|task|boring|done|did|finished|complete[d]?|tick|undo|undone|untick|uncheck|"
-                 r"ta[\s-]?dah?|goals?|project|milestone|balance|bank|tokens?|usage|theme|privacy|say|"
+                 r"ta[\s-]?dah?|goals?|project|milestone|balance|bank|tokens?|usage|theme|privacy|say|focus|pomodoro|pomo|pause|resume|abort|stop|"
                  r"delete|help)\b[\s:,-]*(.*)$", line)
     if not m:
         # bare text: treat as a todo, the most common thing to dictate
@@ -96,6 +98,18 @@ def run_line(store, line):
         return store.settings(theme=rest.lower().split()[0] if rest else "cyan")
     if verb == "privacy":
         return store.settings(privacy=rest.lower() not in ("off", "no", "false", "0"))
+    if verb in ("focus", "pomodoro", "pomo"):
+        fm = re.match(r"(\d{1,3})\s*(?:m|mins?|minutes?)?\b[\s:,-]*(.*)$", rest, re.I)
+        minutes, task = (int(fm.group(1)), fm.group(2)) if fm else (25, rest)
+        return store.focus_start(minutes, re.sub(r"(?i)^(?:on|for)\s+", "", task))
+    if verb == "pause":
+        return store.focus_pause()
+    if verb == "resume":
+        return store.focus_resume()
+    if verb in ("stop", "abort"):
+        if verb == "stop" and rest and not re.match(r"(?i)(focus|timer|pomo|pomodoro)\b", rest):
+            return store.add_todos([line])  # "stop at the shop" is a todo
+        return store.focus_stop()
     if verb == "say":
         return store.broadcast(rest)
     if verb == "delete":

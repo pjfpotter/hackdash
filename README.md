@@ -44,7 +44,10 @@ project novel parked                 milestone hackdash: on the TV
 balance 2431.07                      tokens 38 71   (session% weekly%)
 tokens weekly 71 resets 2d5h         theme amber    (cyan / green / amber)
 privacy on                           say back at 6
+focus 25 write the about page        pause / resume / stop focus
 ```
+
+**Focus mode** is Tears in Rain on the TV: an ASCII dial, rain that gets heavier as time runs out, and Roy Batty's monologue typing out as the session runs. A finished session goes on the TA-DA list with 1 XP per minute.
 
 Anything that doesn't start with a command becomes a todo.
 

@@ -27,6 +27,8 @@ button:active { transform: translateY(1px); }
 .empty { color: var(--dim); }
 #help { white-space: pre; font-size: 16px; color: var(--dim); overflow-x: auto; margin: 0; }
 .err { color: var(--bad); }
+#focusState { font-size: 24px; margin-bottom: 8px; }
+#focusState b { color: var(--hi); font-weight: normal; }
 </style>
 
 <main>
@@ -41,6 +43,7 @@ button:active { transform: translateY(1px); }
     <button data-prefix="boring ">BORING</button>
   </div>
   <div id="out" aria-live="polite">ready.</div>
+  <section><h2>Focus timer (Tears in Rain)</h2><div id="focusState" class="empty"></div><div class="btns" id="focusBtns"></div></section>
   <section><h2>Today: tap to tick off</h2><div class="list" id="todos"></div></section>
   <section><h2>Next milestones</h2><div class="list" id="ms"></div></section>
   <section><h2>Commands</h2><pre id="help">loading...</pre></section>
@@ -54,6 +57,7 @@ let KEY = qs.get('key') || '';
 try { if (KEY) localStorage.setItem('hd_key', KEY); else KEY = localStorage.getItem('hd_key') || ''; } catch (e) {}
 if (qs.get('key')) history.replaceState(null, '', location.pathname);
 $('#keyWarn').hidden = !!KEY;
+let FOCUS = null, skew = 0;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 async function send(text) {
@@ -77,6 +81,9 @@ async function refresh() {
     const r = await fetch('api/state', { headers: { 'X-Dash-Key': KEY }, cache: 'no-store' });
     if (!r.ok) return;
     const S = await r.json();
+    skew = Date.parse(S.now) - Date.now();
+    FOCUS = S.focus;
+    renderFocus();
     const open = S.todos.filter(t => !t.done);
     $('#todos').innerHTML = open.length ? open.map(t => `<button class="item${t.boring ? ' boring' : ''}" data-done="${t.id}"><span class="c">[ ]</span><span>${esc(t.text)}</span></button>`).join('') : '<div class="empty">Nothing open. Nice.</div>';
     const ms = S.projects.filter(p => p.status === 'active').flatMap(p => (p.milestones || []).filter(m => !m.done).slice(0, 1).map(m => ({ p, m })));
@@ -84,9 +91,28 @@ async function refresh() {
   } catch (e) { /* offline; keep what's shown */ }
 }
 
+function renderFocus() {
+  const f = FOCUS, pad = n => String(n).padStart(2, '0');
+  if (!f) {
+    $('#focusState').innerHTML = 'No session running. Tap a length, then say what you\'re working on.';
+    $('#focusBtns').innerHTML = [15, 25, 45].map(m => `<button data-prefix="focus ${m} ">FOCUS ${m}</button>`).join('');
+    return;
+  }
+  const rem = f.status === 'paused' ? f.remaining * 1000 : Math.max(0, Date.parse(f.ends_at) - (Date.now() + skew));
+  const s = Math.ceil(rem / 1000);
+  $('#focusState').innerHTML = `<b>${pad(Math.floor(s / 60))}:${pad(s % 60)}</b> ${f.status === 'paused' ? 'paused' : 'left'}${f.task ? ' / ' + esc(f.task) : ''}`;
+  const want = f.status === 'paused' ? 'resume' : 'pause';
+  if ($('#focusBtns').dataset.mode !== want) {
+    $('#focusBtns').dataset.mode = want;
+    $('#focusBtns').innerHTML = `<button class="go" data-cmd="${want}">${want.toUpperCase()}</button><button data-cmd="stop focus">STOP</button>`;
+  }
+}
+setInterval(renderFocus, 1000);
+
 $('#send').onclick = () => send($('#cmd').value);
 $('#cmd').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send($('#cmd').value); });
-document.querySelectorAll('[data-prefix]').forEach(b => b.onclick = () => { const c = $('#cmd'); c.value = b.dataset.prefix + c.value.replace(/^(tada|todo|boring)\s+/i, ''); c.focus(); });
+document.addEventListener('click', e => { const b = e.target.closest('[data-prefix]'); if (!b) return; const c = $('#cmd'); c.value = b.dataset.prefix + c.value.replace(/^(tada|todo|boring|focus \d+)\s+/i, ''); c.focus(); });
+document.addEventListener('click', e => { const b = e.target.closest('[data-cmd]'); if (b) { $('#focusBtns').dataset.mode = ''; send(b.dataset.cmd); } });
 document.addEventListener('click', e => { const b = e.target.closest('[data-done]'); if (b) send('done ' + b.dataset.done); });
 fetch('api/cmd', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Dash-Key': KEY }, body: '{"text":"help"}' })
   .then(r => r.json()).then(j => { $('#help').textContent = j.replies.join('\n'); }).catch(() => { $('#help').textContent = 'Connect to see commands.'; });
