@@ -55,6 +55,7 @@ Anything that doesn't start with a command becomes a todo.
 - **Night mode** dims the screen from 23:00 to 07:00. The layout shifts a few pixels every 10 minutes to protect an old panel.
 - **If it stutters:** add `&lowfx=1` to the URL in `setup/kiosk.sh`. Add `&sound=0` to mute the reward chimes.
 - **Security:** the API needs the key and the MCP URL contains a secret token. Treat both like passwords. Delete `data/config.json` and restart to rotate them.
+- **Updating:** `~/hackdash/setup/update.sh` pulls the latest version and restarts; the TV reloads itself.
 - **Run it on a laptop first:** `python3 server.py` and open the TV link it prints.
 
 ## Later (not v1)

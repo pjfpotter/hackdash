@@ -52,6 +52,7 @@ def load_config():
 
 
 CFG = load_config()
+BUILD = str(int(time.time()))  # changes on every restart; the TV reloads when it sees a new one
 _fresh = not os.path.exists(os.path.join(DATA, "state.json"))
 STORE = Store(os.path.join(DATA, "state.json"))
 if _fresh:
@@ -116,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authed(q):
             return self._send(401, {"error": "missing or wrong key"})
         if u.path == "/api/state":
-            return self._send(200, STORE.snapshot())
+            return self._send(200, dict(STORE.snapshot(), build=BUILD))
         if u.path == "/api/events":
             return self._sse()
         self._send(404, {"error": "not found"})

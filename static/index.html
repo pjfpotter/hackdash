@@ -19,6 +19,7 @@ body { background: var(--bg); color: var(--fg); font: 20px/1.05 var(--font); tex
 .lowfx body, .lowfx * { text-shadow: none !important; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+.nocursor, .nocursor * { cursor: none !important; }
 
 #stage { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; padding: 12px;
   display: grid; gap: 10px; grid-template-columns: 330px 1fr 330px; grid-template-rows: 100px 1fr 162px 22px; }
@@ -190,7 +191,7 @@ const LOWFX = qs.has('lowfx');
 const SOUND = qs.get('sound') !== '0';
 if (LOWFX) document.documentElement.classList.add('lowfx');
 
-let S = null, DEMO = false, authFail = false, linkOk = false, lastHandle = null, bootAt = Date.now();
+let S = null, bootBuild = null, DEMO = false, authFail = false, linkOk = false, lastHandle = null, bootAt = Date.now();
 
 // ---------- tiny 5-row block font for banners ----------
 const F = {
@@ -471,6 +472,9 @@ async function load() {
     authFail = r.status === 401;
     if (!r.ok) throw new Error(r.status);
     S = await r.json(); DEMO = false; linkOk = true;
+    // server restarted (e.g. after an update): reload to pick up the new page
+    if (S.build && bootBuild && S.build !== bootBuild) { location.reload(); return; }
+    bootBuild = bootBuild || S.build;
   } catch (e) {
     linkOk = false;
     if (!S || DEMO) { DEMO = true; S = demo(); }
@@ -480,7 +484,7 @@ async function load() {
 function connect() {
   if (DEMO || !window.EventSource) return;
   const es = new EventSource(api('api/events'));
-  es.onopen = () => { linkOk = true; };
+  es.onopen = () => { linkOk = true; load(); }; // also catches a server restart
   es.onerror = () => { linkOk = false; };
   es.onmessage = e => {
     const ev = JSON.parse(e.data);
@@ -567,6 +571,12 @@ function fit() {
 addEventListener('resize', fit);
 // nudge everything a few pixels every 10 minutes so static text doesn't burn into an old screen
 setInterval(() => { shift = [Math.round(Math.random() * 6 - 3), Math.round(Math.random() * 6 - 3)]; fit(); }, 6e5);
+
+// hide the mouse pointer when it hasn't moved for a few seconds
+let cursorTimer = null;
+function wake() { document.documentElement.classList.remove('nocursor'); clearTimeout(cursorTimer); cursorTimer = setTimeout(() => document.documentElement.classList.add('nocursor'), 3000); }
+addEventListener('mousemove', wake);
+wake();
 
 fit();
 load().then(connect);
